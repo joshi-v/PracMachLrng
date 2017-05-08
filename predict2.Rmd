@@ -1,0 +1,140 @@
+---
+title: "Practical Machine Learning - Final Project"
+author: "VJ"
+date: "May 7, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+``` {r load.lib, echo = FALSE, warning = FALSE, message = FALSE}
+rm(list=ls())
+library(caret)
+```
+
+
+## Problem Statement
+
+People are using devices such as Jawbone Up, Nike FuelBand, and Fitbit to collect data about personal activity. Folks take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. This data quantifies how much of a particular activity they do, but rarely quantifies how well they do it. We will use the data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to quantify the quality of their exercises. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har and is being acknowledged in this assignment.
+
+
+## Reading in Data
+# read the dataframes, setting blank values as NA, if I want to impute later
+
+```{r dataread}
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+                     check.names = TRUE, na.strings=c("NA",""), 
+                     header=TRUE, stringsAsFactors=FALSE)
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+                    check.names = TRUE, na.strings=c("NA",""), 
+                    header=TRUE, stringsAsFactors=FALSE)
+```
+
+```{r dfinfo}
+
+# get some info about the dataframes
+
+summary(training)
+summary(testing)
+```
+
+## Data Validation
+
+
+Following is the information re. the percentage of column being NA. If the percentage NA > 0, it will be removed in the following block
+
+```{r nainfo}
+round(colSums(is.na(training))/nrow(training), 4)
+rem.columns <- names(which(colSums(is.na(training))>0))
+subTrain <- training[, !(names(training) %in% rem.columns)]
+subTest <- testing[, !(names(testing) %in% rem.columns)]
+
+```
+
+To avoid overfitting, next we will remove the variables whose values don't change much to avoid overfitting.
+```{r rmnzv}
+# remove columns with near zero value (since they have virtually 
+# no variability), using nzv since potentially can cause overfitting
+ subTrain <- subTrain[, names(subTrain)[!(nearZeroVar(subTrain,  saveMetrics = T)[, 4])]]
+```
+
+After looking through the dataframe and the data dictionary, I will remove a few other columns because I have determined  that they will not impact the final classification. However, someone with more domain knowledge may overrule me and choose to use them.
+
+```{r delcols}
+# remove first seven columns as they are useless for predicting
+subTrain <- subTrain[,8:length(colnames(subTrain))]
+subTest <- subTest[,8:length(colnames(subTest))]
+```
+
+## Partition the train and test data
+
+Next we will partition the data into test and training samples and set up the training and test variables for use by the caret package.
+```{r magich}
+set.seed(12345)
+inTrain <- createDataPartition(subTrain$classe, p = 0.60, list = FALSE)
+subTraining <- subTrain[inTrain, ]
+subValidation <- subTrain[-inTrain, ]
+
+y <- subTraining$classe
+x <- subTraining[, -52]
+```
+
+## Fit model parameters 
+
+To avoid overweighting parameters that may cause issue with the modeling, I have chosen to preprocess that data by centering and scaling. Also, I have chosen to enable crossvalidation
+
+```{r modelfits}
+model_rf <- train(x, y, 
+                preProcess = c("center","scale"), 
+                trControl = trainControl(method = "cv", number = 4),
+                method="rf")
+predict_rf <- predict(model_rf, subValidation)
+print(confusionMatrix(predict_rf, subValidation$classe), digits = 4)
+varImp(model_rf)
+
+model_rpart <- train(x, y, 
+                preProcess = c("center","scale"), 
+                trControl = trainControl(method = "cv", number = 4),
+                method="rpart")
+predict_rpart <- predict(model_rpart, subValidation)
+print(confusionMatrix(predict_rpart, subValidation$classe), digits = 4)
+varImp(model_rpart)
+
+model_gbm <- train(x, y, 
+                   preProcess = c("center","scale"), 
+                   trControl = trainControl(method = "cv", number = 4),
+                   method="gbm")
+predict_gbm <- predict(model_gbm, subValidation)
+print(confusionMatrix(predict_gbm, subValidation$classe), digits = 4)
+varImp(model_gbm)
+
+model_nnet<-train(x, y,
+                  preProcess = c("center","scale"),
+                  trControl = trainControl(method = "cv", number = 4),
+                  method='nnet')
+predict_nnet <- predict(model_nnet, subValidation)
+print(confusionMatrix(predict_nnet, subValidation$classe), digits = 2)
+varImp(model_nnet)
+```
+
+Evaluating all the models, the randomForest models seems to enable the best fit and that is what we will use to estimate the final result.
+
+## Final Result
+```{r finres}
+print(predict(model_rf, newdata=subTest))
+```
+
+Please do let me know if there is some other analysis I could performed.
